@@ -2,6 +2,8 @@ import React, { useEffect, useState } from "react";
 import Search from "./components/search";
 import Spinner from "./components/Spinner";
 import MovieCard from "./components/MovieCard";
+import { useDebounce } from "react-use";
+import { getTrendingMoviesFun, updateSearchCount } from "./appwrite";
 
 const API_BASE_URL = "https://api.themoviedb.org/3/";
 
@@ -19,12 +21,23 @@ function App() {
   const [searchTerm, setSearchTerm] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
   const [moviesList, setMoviesList] = useState([]);
+
   const [isLoading, setIsLoading] = useState(false);
-  const fetchMovies = async () => {
+  const [trendingMovies, setTrendingMovies] = useState([]);
+  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState("");
+
+  // Debounce the search term to prevent making too many Api requests
+  // by waiting for the user to stop typing for 500ms
+
+  useDebounce(() => setDebouncedSearchTerm(searchTerm), 500, [searchTerm]);
+
+  const fetchMovies = async (query = "") => {
     setIsLoading(true);
     setErrorMessage("");
     try {
-      const endpoint = `${API_BASE_URL}/discover/movie?sort_by=popularity.desc`;
+      const endpoint = query
+        ? `${API_BASE_URL}/search/movie?query=${encodeURIComponent(query)}`
+        : `${API_BASE_URL}/discover/movie?sort_by=popularity.desc`;
       const response = await fetch(endpoint, API_OPTIONS);
       // alert(response);
       //
@@ -39,16 +52,36 @@ function App() {
         return;
       }
       setMoviesList(data.results || []);
+
+      if (query && data.results.length > 0) {
+        await updateSearchCount(query, data.results[0]);
+      }
     } catch (error) {
       console.error(`Error in fetching the Movies: ${error}`);
-      setErrorMessage("Error in fetchong moview, Please try again later");
+      setErrorMessage("Error in fetching movies, Please try again later");
     } finally {
       setIsLoading(false);
     }
   };
+
+  const loadTrendingMovies = async () => {
+    try {
+      const movies = await getTrendingMoviesFun();
+      setTrendingMovies(movies);
+    } catch (error) {
+      console.log(`error fetching Trending Movies ${error}`);
+      // setErrorMessage("Error in fetching the trending movies");
+    }
+  };
+
   useEffect(() => {
-    fetchMovies();
+    fetchMovies(debouncedSearchTerm);
+  }, [debouncedSearchTerm]);
+
+  useEffect(() => {
+    loadTrendingMovies();
   }, []);
+
   return (
     <main>
       <div className="pattern" />
@@ -61,8 +94,24 @@ function App() {
           </h1>
           <Search searchTerm={searchTerm} setSearchTerm={setSearchTerm} />
         </header>
+
+        {trendingMovies.length > 0 && (
+          <section className="trending">
+            <h2>Trending Movies</h2>
+
+            <ul>
+              {trendingMovies.map((movie, index) => (
+                <li key={movie.$id}>
+                  <p>{index + 1}</p>
+                  <img src={movie.poster_url} alt={movie.title} />
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
+
         <section className="all-movies">
-          <h2 className="mt-[40px]">All Movies</h2>
+          <h2 className="">All Movies</h2>
           {isLoading ? (
             <Spinner />
           ) : errorMessage ? (
